@@ -67,6 +67,22 @@ func (c *Client) Login(ctx context.Context, user, pass string) error {
 	return nil
 }
 
+func (c *Client) Logout(ctx context.Context) error {
+	if c.c == nil {
+		c.c = &http.Client{}
+
+		jar, _ := cookiejar.New(nil)
+		c.c.Jar = jar
+	}
+
+	err := c.do(ctx, "GET", "logout", nil, nil)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (c *Client) do(ctx context.Context, method, relativeURL string, reqBody interface{}, respBody interface{}) error {
 	var (
 		reqReader io.Reader
