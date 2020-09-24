@@ -11,12 +11,14 @@ import (
 	"net/url"
 )
 
+// NotFoundError for API method not found
 type NotFoundError struct{}
 
 func (err *NotFoundError) Error() string {
 	return "not found"
 }
 
+// APIError holds error messages from the UniFi API response
 type APIError struct {
 	RC      string
 	Message string
@@ -26,11 +28,13 @@ func (err *APIError) Error() string {
 	return err.Message
 }
 
+// Client struct for passing baseUrl and http.Client address
 type Client struct {
 	c       *http.Client
 	baseURL *url.URL
 }
 
+// SetBaseURL sets the UniFi controller's hostname/IP address
 func (c *Client) SetBaseURL(base string) error {
 	var err error
 	c.baseURL, err = url.Parse(base)
@@ -40,11 +44,13 @@ func (c *Client) SetBaseURL(base string) error {
 	return nil
 }
 
+// SetHTTPClient assigns the http.Client struct address
 func (c *Client) SetHTTPClient(hc *http.Client) error {
 	c.c = hc
 	return nil
 }
 
+// Login to the UniFi controller API can grab a session cookie
 func (c *Client) Login(ctx context.Context, user, pass string) error {
 	if c.c == nil {
 		c.c = &http.Client{}
@@ -67,12 +73,10 @@ func (c *Client) Login(ctx context.Context, user, pass string) error {
 	return nil
 }
 
+// Logout of the UniFi controller API
 func (c *Client) Logout(ctx context.Context) error {
 	if c.c == nil {
 		c.c = &http.Client{}
-
-		jar, _ := cookiejar.New(nil)
-		c.c.Jar = jar
 	}
 
 	err := c.do(ctx, "GET", "logout", nil, nil)
