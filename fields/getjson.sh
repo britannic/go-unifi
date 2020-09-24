@@ -1,6 +1,7 @@
 #! /bin/bash
 
-deburl="https://dl.ui.com/unifi/$1/unifi_sysvinit_all.deb"
+#deburl="https://dl.ui.com/unifi/$1/unifi_sysvinit_all.deb"
+deburl="https://dl.ui.com/unifi/6.0.24-b200bf6446/unifi_sysvinit_all.deb"
 wkdir="$(mktemp -d)"
 deb="$wkdir\unifi.deb"
 

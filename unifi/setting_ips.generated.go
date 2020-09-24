@@ -25,60 +25,48 @@ type SettingIps struct {
 
 	Key string `json:"key"`
 
-	DNSFiltering        bool                   `json:"dns_filtering"`
-	DNSFilters          []SettingIpsDNSFilters `json:"dns_filters,omitempty"`
-	EnabledCategories   []string               `json:"enabled_categories,omitempty"` // emerging-activex|emerging-attackresponse|botcc|emerging-chat|ciarmy|compromised|emerging-dns|emerging-dos|dshield|emerging-exploit|emerging-ftp|emerging-games|emerging-icmp|emerging-icmpinfo|emerging-imap|emerging-inappropriate|emerging-info|emerging-malware|emerging-misc|emerging-mobile|emerging-netbios|emerging-p2p|emerging-policy|emerging-pop3|emerging-rpc|emerging-scada|emerging-scan|emerging-shellcode|emerging-smtp|emerging-snmp|spamhaus|emerging-sql|emerging-telnet|emerging-tftp|tor|emerging-trojan|emerging-useragent|emerging-voip|emerging-webapps|emerging-webclient|emerging-webserver|emerging-worm
-	EndpointScanning    bool                   `json:"endpoint_scanning"`
-	Honeypot            []SettingIpsHoneypot   `json:"honeypot,omitempty"`
-	HoneypotEnabled     bool                   `json:"honeypot_enabled"`
-	IPsMode             string                 `json:"ips_mode,omitempty"` // ids|ips|ipsInline|disabled
-	RestrictIPAddresses bool                   `json:"restrict_ip_addresses"`
-	RestrictTor         bool                   `json:"restrict_tor"`
-	RestrictTorrents    bool                   `json:"restrict_torrents"`
-	Suppression         SettingIpsSuppression  `json:"suppression,omitempty"`
-}
-
-type SettingIpsAlerts struct {
-	Category  string               `json:"category,omitempty"`
-	Gid       int                  `json:"gid,omitempty"`
-	ID        int                  `json:"id,omitempty"`
-	Signature string               `json:"signature,omitempty"`
-	Tracking  []SettingIpsTracking `json:"tracking,omitempty"`
-	Type      string               `json:"type,omitempty"` // all|track
-}
-
-type SettingIpsDNSFilters struct {
-	AllowedSites []string `json:"allowed_sites,omitempty"` // ^[a-zA-Z0-9.-]+$|^$
-	BlockedSites []string `json:"blocked_sites,omitempty"` // ^[a-zA-Z0-9.-]+$|^$
-	BlockedTld   []string `json:"blocked_tld,omitempty"`   // ^[a-zA-Z0-9.-]+$|^$
-	Description  string   `json:"description,omitempty"`
-	Filter       string   `json:"filter,omitempty"` // none|security|adult|family
-	Name         string   `json:"name,omitempty"`
-	NetworkID    string   `json:"network_id"`
-	Version      string   `json:"version,omitempty"` // v4|v6
-}
-
-type SettingIpsHoneypot struct {
-	IPAddress string `json:"ip_address,omitempty"`
-	NetworkID string `json:"network_id"`
-	Version   string `json:"version,omitempty"` // v4|v6
-}
-
-type SettingIpsSuppression struct {
-	Alerts    []SettingIpsAlerts    `json:"alerts,omitempty"`
-	Whitelist []SettingIpsWhitelist `json:"whitelist,omitempty"`
-}
-
-type SettingIpsTracking struct {
-	Direction string `json:"direction,omitempty"` // both|src|dest
-	Mode      string `json:"mode,omitempty"`      // ip|subnet|network
-	Value     string `json:"value,omitempty"`
-}
-
-type SettingIpsWhitelist struct {
-	Direction string `json:"direction,omitempty"` // both|src|dest
-	Mode      string `json:"mode,omitempty"`      // ip|subnet|network
-	Value     string `json:"value,omitempty"`
+	DNSFiltering bool `json:"dns_filtering"`
+	DNSFilters   []struct {
+		AllowedSites []string `json:"allowed_sites,omitempty"` // ^[a-zA-Z0-9.-]+$|^$
+		BlockedSites []string `json:"blocked_sites,omitempty"` // ^[a-zA-Z0-9.-]+$|^$
+		BlockedTld   []string `json:"blocked_tld,omitempty"`   // ^[a-zA-Z0-9.-]+$|^$
+		Description  string   `json:"description,omitempty"`
+		Filter       string   `json:"filter,omitempty"` // none|work|family
+		Name         string   `json:"name,omitempty"`
+		NetworkID    string   `json:"network_id"`
+		Version      string   `json:"version,omitempty"` // v4|v6
+	} `json:"dns_filters,omitempty"`
+	EnabledCategories []string `json:"enabled_categories,omitempty"` // emerging-activex|emerging-attackresponse|botcc|emerging-chat|ciarmy|compromised|emerging-dns|emerging-dos|dshield|emerging-exploit|emerging-ftp|emerging-games|emerging-icmp|emerging-icmpinfo|emerging-imap|emerging-inappropriate|emerging-info|emerging-malware|emerging-misc|emerging-mobile|emerging-netbios|emerging-p2p|emerging-policy|emerging-pop3|emerging-rpc|emerging-scada|emerging-scan|emerging-shellcode|emerging-smtp|emerging-snmp|emerging-sql|emerging-telnet|emerging-tftp|tor|emerging-trojan|emerging-useragent|emerging-voip|emerging-webapps|emerging-webclient|emerging-webserver|emerging-worm
+	EndpointScanning  bool     `json:"endpoint_scanning"`
+	Honeypot          []struct {
+		IPAddress string `json:"ip_address,omitempty"`
+		NetworkID string `json:"network_id"`
+		Version   string `json:"version,omitempty"` // v4|v6
+	} `json:"honeypot,omitempty"`
+	HoneypotEnabled     bool   `json:"honeypot_enabled"`
+	IPsMode             string `json:"ips_mode,omitempty"` // ids|ips|ipsInline|disabled
+	RestrictIPAddresses bool   `json:"restrict_ip_addresses"`
+	RestrictTor         bool   `json:"restrict_tor"`
+	RestrictTorrents    bool   `json:"restrict_torrents"`
+	Suppression         struct {
+		Alerts []struct {
+			Category  string `json:"category,omitempty"`
+			Gid       int    `json:"gid,omitempty"`
+			ID        int    `json:"id,omitempty"`
+			Signature string `json:"signature,omitempty"`
+			Tracking  []struct {
+				Direction string `json:"direction,omitempty"` // both|src|dest
+				Mode      string `json:"mode,omitempty"`      // ip|subnet|network
+				Value     string `json:"value,omitempty"`
+			} `json:"tracking,omitempty"`
+			Type string `json:"type,omitempty"` // all|track
+		} `json:"alerts,omitempty"`
+		Whitelist []struct {
+			Direction string `json:"direction,omitempty"` // both|src|dest
+			Mode      string `json:"mode,omitempty"`      // ip|subnet|network
+			Value     string `json:"value,omitempty"`
+		} `json:"whitelist,omitempty"`
+	} `json:"suppression,omitempty"`
 }
 
 func (c *Client) getSettingIps(ctx context.Context, site string) (*SettingIps, error) {

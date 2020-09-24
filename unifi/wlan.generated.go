@@ -23,7 +23,9 @@ type WLAN struct {
 	NoDelete bool   `json:"attr_no_delete,omitempty"`
 	NoEdit   bool   `json:"attr_no_edit,omitempty"`
 
+	ApGroupIDs                []string `json:"ap_group_ids,omitempty"`
 	AuthCache                 bool     `json:"auth_cache"`
+	BSupported                bool     `json:"b_supported"`
 	BroadcastFilterEnabled    bool     `json:"bc_filter_enabled"`
 	BroadcastFilterList       []string `json:"bc_filter_list,omitempty"` // ^([0-9A-Fa-f]{2}:){5}([0-9A-Fa-f]{2})$
 	BssTransition             bool     `json:"bss_transition"`
@@ -61,9 +63,11 @@ type WLAN struct {
 	Name                      string   `json:"name,omitempty"` // .{1,32}
 	NameCombineEnabled        bool     `json:"name_combine_enabled"`
 	NameCombineSuffix         string   `json:"name_combine_suffix,omitempty"` // .{0,8}
+	NetworkID                 string   `json:"networkconf_id"`
 	No2GhzOui                 bool     `json:"no2ghz_oui"`
 	P2P                       bool     `json:"p2p"`
 	P2PCrossConnect           bool     `json:"p2p_cross_connect"`
+	PMFMode                   string   `json:"pmf_mode,omitempty"` // disabled|optional|required
 	Priority                  string   `json:"priority,omitempty"` // medium|high|low
 	ProxyArp                  bool     `json:"proxy_arp"`
 	RADIUSDasEnabled          bool     `json:"radius_das_enabled"`
@@ -76,19 +80,25 @@ type WLAN struct {
 	Schedule                  []string `json:"schedule,omitempty"` // (sun|mon|tue|wed|thu|fri|sat)(\-(sun|mon|tue|wed|thu|fri|sat))?\|([0-2][0-9][0-5][0-9])\-([0-2][0-9][0-5][0-9])
 	ScheduleEnabled           bool     `json:"schedule_enabled"`
 	ScheduleReversed          bool     `json:"schedule_reversed"`
-	Security                  string   `json:"security,omitempty"` // open|wpapsk|wep|wpaeap|osen
-	TdlsProhibit              bool     `json:"tdls_prohibit"`
-	UapsdEnabled              bool     `json:"uapsd_enabled"`
-	UserGroupID               string   `json:"usergroup_id"`
-	VLAN                      int      `json:"vlan,omitempty"` // [2-9]|[1-9][0-9]{1,2}|[1-3][0-9]{3}|40[0-8][0-9]|409[0-5]|^$
-	VLANEnabled               bool     `json:"vlan_enabled"`
-	WEPIDX                    int      `json:"wep_idx,omitempty"` // [1-4]
-	WLANGroupID               string   `json:"wlangroup_id"`
-	WPAEnc                    string   `json:"wpa_enc,omitempty"`      // auto|ccmp
-	WPAMode                   string   `json:"wpa_mode,omitempty"`     // auto|wpa1|wpa2
-	XIappKey                  string   `json:"x_iapp_key,omitempty"`   // [0-9A-Fa-f]{32}
-	XPassphrase               string   `json:"x_passphrase,omitempty"` // [\x20-\x7E]{8,63}|[0-9a-fA-F]{64}
-	XWEP                      string   `json:"x_wep,omitempty"`
+	ScheduleWithDuration      []struct {
+		DurationMinutes int      `json:"duration_minutes,omitempty"`   // ^[1-9][0-9]*$
+		StartDaysOfWeek []string `json:"start_days_of_week,omitempty"` // ^(sun|mon|tue|wed|thu|fri|sat)$
+		StartHour       int      `json:"start_hour,omitempty"`         // ^(1?[0-9])|(2[0-3])$
+		StartMinute     int      `json:"start_minute,omitempty"`       // ^[0-5]?[0-9]$
+	} `json:"schedule_with_duration,omitempty"`
+	Security     string `json:"security,omitempty"` // open|wpapsk|wep|wpaeap|osen
+	TdlsProhibit bool   `json:"tdls_prohibit"`
+	UapsdEnabled bool   `json:"uapsd_enabled"`
+	UserGroupID  string `json:"usergroup_id"`
+	VLAN         int    `json:"vlan,omitempty"` // [2-9]|[1-9][0-9]{1,2}|[1-3][0-9]{3}|40[0-8][0-9]|409[0-5]|^$
+	VLANEnabled  bool   `json:"vlan_enabled"`
+	WEPIDX       int    `json:"wep_idx,omitempty"`      // [1-4]
+	WLANBand     string `json:"wlan_band,omitempty"`    // 2g|5g|both
+	WPAEnc       string `json:"wpa_enc,omitempty"`      // auto|ccmp
+	WPAMode      string `json:"wpa_mode,omitempty"`     // auto|wpa1|wpa2
+	XIappKey     string `json:"x_iapp_key,omitempty"`   // [0-9A-Fa-f]{32}
+	XPassphrase  string `json:"x_passphrase,omitempty"` // [\x20-\x7E]{8,63}|[0-9a-fA-F]{64}
+	XWEP         string `json:"x_wep,omitempty"`
 }
 
 func (c *Client) listWLAN(ctx context.Context, site string) ([]WLAN, error) {
