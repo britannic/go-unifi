@@ -119,11 +119,11 @@ func (c *Client) UnblockUserByMAC(ctx context.Context, site, mac string) error {
 }
 
 // AuthUserByMAC authenticates a guest WiFi session by MAC
-func (c *Client) AuthUserByMAC(ctx context.Context, ap, id, site, minutes, mac string) error {
+func (c *Client) AuthUserByMAC(ctx context.Context, site, minutes, ap, mac string) error {
 	users, err := c.stamgr(ctx, site, "authorize-guest", map[string]interface{}{
 		"ap_mac":  ap,
 		"cmd":     "authorize-guest",
-		"mac":     id,
+		"mac":     mac,
 		"minutes": minutes,
 	})
 
