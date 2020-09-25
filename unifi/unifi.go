@@ -142,27 +142,7 @@ func (c *Client) Logout(ctx context.Context) error {
 	return c.do(ctx, "GET", "logout", nil, nil)
 }
 
-// AuthWiFiGuest authenticates a guest WiFi session
-func (c *Client) AuthWiFiGuest(ctx context.Context, ap, id, minutes string) error {
-	if c.c == nil {
-		c.c = &http.Client{}
 
-		jar, _ := cookiejar.New(nil)
-		c.c.Jar = jar
-	}
-
-	return c.do(ctx, "POST", c.loginPath, &struct {
-		AP      string `json:"ap"`
-		CMD     string `json:"cmd"`
-		MAC     string `json:"mac"`
-		Minutes string `json:"minutes"`
-	}{
-		AP:      ap,
-		CMD:     "authorize-guest",
-		MAC:     id,
-		Minutes: minutes,
-	}, nil)
-}
 
 func (c *Client) do(ctx context.Context, method, relativeURL string, reqBody interface{}, respBody interface{}) error {
 	var (

@@ -118,6 +118,24 @@ func (c *Client) UnblockUserByMAC(ctx context.Context, site, mac string) error {
 	return nil
 }
 
+// AuthUserByMAC authenticates a guest WiFi session by MAC
+func (c *Client) AuthUserByMAC(ctx context.Context, ap, id, site, minutes, mac string) error {
+	users, err := c.stamgr(ctx, site, "authorize-guest", map[string]interface{}{
+		"ap_mac":  ap,
+		"cmd":     "authorize-guest",
+		"mac":     id,
+		"minutes": minutes,
+	})
+
+	if err != nil {
+		return err
+	}
+	if len(users) != 1 {
+		return &NotFoundError{}
+	}
+	return nil
+}
+
 func (c *Client) DeleteUserByMAC(ctx context.Context, site, mac string) error {
 	users, err := c.stamgr(ctx, site, "forget-sta", map[string]interface{}{
 		"macs": []string{mac},
