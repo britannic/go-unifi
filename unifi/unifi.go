@@ -1,4 +1,4 @@
-package unifi //
+package unifi
 
 import (
 	"bytes"
@@ -39,7 +39,7 @@ func (err *APIError) Error() string {
 	return err.Message
 }
 
-// Client struct for passing baseUrl and http.Client address
+// Client struct for configuring client API requests
 type Client struct {
 	c       *http.Client
 	baseURL *url.URL
@@ -124,18 +124,13 @@ func (c *Client) Login(ctx context.Context, user, pass string) error {
 		return fmt.Errorf("unable to determine API URL style: %w", err)
 	}
 
-	err = c.do(ctx, "POST", c.loginPath, &struct {
+	return c.do(ctx, "POST", c.loginPath, &struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}{
 		Username: user,
 		Password: pass,
 	}, nil)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // Logout of the UniFi controller API
@@ -144,12 +139,29 @@ func (c *Client) Logout(ctx context.Context) error {
 		c.c = &http.Client{}
 	}
 
-	err := c.do(ctx, "GET", "logout", nil, nil)
-	if err != nil {
-		return err
+	return c.do(ctx, "GET", "logout", nil, nil)
+}
+
+// AuthWiFiGuest authenticates a guest WiFi session
+func (c *Client) AuthWiFiGuest(ctx context.Context, ap, id, minutes string) error {
+	if c.c == nil {
+		c.c = &http.Client{}
+
+		jar, _ := cookiejar.New(nil)
+		c.c.Jar = jar
 	}
 
-	return nil
+	return c.do(ctx, "POST", c.loginPath, &struct {
+		AP      string `json:"ap"`
+		CMD     string `json:"cmd"`
+		MAC     string `json:"mac"`
+		Minutes string `json:"minutes"`
+	}{
+		AP:      ap,
+		CMD:     "authorize-guest",
+		MAC:     id,
+		Minutes: minutes,
+	}, nil)
 }
 
 func (c *Client) do(ctx context.Context, method, relativeURL string, reqBody interface{}, respBody interface{}) error {
