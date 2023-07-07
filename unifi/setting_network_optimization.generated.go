@@ -5,13 +5,15 @@ package unifi
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 )
 
 // just to fix compile issues with the import
 var (
-	_ fmt.Formatter
 	_ context.Context
+	_ fmt.Formatter
+	_ json.Marshaler
 )
 
 type SettingNetworkOptimization struct {
@@ -26,6 +28,22 @@ type SettingNetworkOptimization struct {
 	Key string `json:"key"`
 
 	Enabled bool `json:"enabled"`
+}
+
+func (dst *SettingNetworkOptimization) UnmarshalJSON(b []byte) error {
+	type Alias SettingNetworkOptimization
+	aux := &struct {
+		*Alias
+	}{
+		Alias: (*Alias)(dst),
+	}
+
+	err := json.Unmarshal(b, &aux)
+	if err != nil {
+		return fmt.Errorf("unable to unmarshal alias: %w", err)
+	}
+
+	return nil
 }
 
 func (c *Client) getSettingNetworkOptimization(ctx context.Context, site string) (*SettingNetworkOptimization, error) {
@@ -53,6 +71,7 @@ func (c *Client) updateSettingNetworkOptimization(ctx context.Context, site stri
 		Data []SettingNetworkOptimization `json:"data"`
 	}
 
+	d.Key = "network_optimization"
 	err := c.do(ctx, "PUT", fmt.Sprintf("s/%s/set/setting/network_optimization", site), d, &respBody)
 	if err != nil {
 		return nil, err

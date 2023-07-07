@@ -5,13 +5,15 @@ package unifi
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 )
 
 // just to fix compile issues with the import
 var (
-	_ fmt.Formatter
 	_ context.Context
+	_ fmt.Formatter
+	_ json.Marshaler
 )
 
 type ScheduleTask struct {
@@ -23,18 +25,47 @@ type ScheduleTask struct {
 	NoDelete bool   `json:"attr_no_delete,omitempty"`
 	NoEdit   bool   `json:"attr_no_edit,omitempty"`
 
-	Action                  string `json:"action,omitempty"` // stream|upgrade
-	AdditionalSoundsEnabled bool   `json:"additional_sounds_enabled"`
-	BroadcastgroupID        string `json:"broadcastgroup_id"`
-	CronExpr                string `json:"cron_expr,omitempty"`
-	ExecuteOnlyOnce         bool   `json:"execute_only_once"`
-	MediafileID             string `json:"mediafile_id"`
-	Name                    string `json:"name,omitempty"`
-	SampleFilename          string `json:"sample_filename,omitempty"`
-	StreamType              string `json:"stream_type,omitempty"` // media|sample
-	UpgradeTargets          []struct {
-		MAC string `json:"mac,omitempty"` // ^([0-9A-Fa-f]{2}:){5}([0-9A-Fa-f]{2})$
-	} `json:"upgrade_targets,omitempty"`
+	Action          string                       `json:"action,omitempty"` // upgrade
+	CronExpr        string                       `json:"cron_expr,omitempty"`
+	ExecuteOnlyOnce bool                         `json:"execute_only_once"`
+	Name            string                       `json:"name,omitempty"`
+	UpgradeTargets  []ScheduleTaskUpgradeTargets `json:"upgrade_targets,omitempty"`
+}
+
+func (dst *ScheduleTask) UnmarshalJSON(b []byte) error {
+	type Alias ScheduleTask
+	aux := &struct {
+		*Alias
+	}{
+		Alias: (*Alias)(dst),
+	}
+
+	err := json.Unmarshal(b, &aux)
+	if err != nil {
+		return fmt.Errorf("unable to unmarshal alias: %w", err)
+	}
+
+	return nil
+}
+
+type ScheduleTaskUpgradeTargets struct {
+	MAC string `json:"mac,omitempty"` // ^([0-9A-Fa-f]{2}:){5}([0-9A-Fa-f]{2})$
+}
+
+func (dst *ScheduleTaskUpgradeTargets) UnmarshalJSON(b []byte) error {
+	type Alias ScheduleTaskUpgradeTargets
+	aux := &struct {
+		*Alias
+	}{
+		Alias: (*Alias)(dst),
+	}
+
+	err := json.Unmarshal(b, &aux)
+	if err != nil {
+		return fmt.Errorf("unable to unmarshal alias: %w", err)
+	}
+
+	return nil
 }
 
 func (c *Client) listScheduleTask(ctx context.Context, site string) ([]ScheduleTask, error) {

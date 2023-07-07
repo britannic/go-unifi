@@ -5,13 +5,15 @@ package unifi
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 )
 
 // just to fix compile issues with the import
 var (
-	_ fmt.Formatter
 	_ context.Context
+	_ fmt.Formatter
+	_ json.Marshaler
 )
 
 type SettingAutoSpeedtest struct {
@@ -25,8 +27,24 @@ type SettingAutoSpeedtest struct {
 
 	Key string `json:"key"`
 
-	Enabled  bool `json:"enabled"`
-	Interval int  `json:"interval,omitempty"` // ^(1[2-9]|[2-9][0-9]|[1-9][0-9]{2,3})$
+	CronExpr string `json:"cron_expr,omitempty"`
+	Enabled  bool   `json:"enabled"`
+}
+
+func (dst *SettingAutoSpeedtest) UnmarshalJSON(b []byte) error {
+	type Alias SettingAutoSpeedtest
+	aux := &struct {
+		*Alias
+	}{
+		Alias: (*Alias)(dst),
+	}
+
+	err := json.Unmarshal(b, &aux)
+	if err != nil {
+		return fmt.Errorf("unable to unmarshal alias: %w", err)
+	}
+
+	return nil
 }
 
 func (c *Client) getSettingAutoSpeedtest(ctx context.Context, site string) (*SettingAutoSpeedtest, error) {
@@ -54,6 +72,7 @@ func (c *Client) updateSettingAutoSpeedtest(ctx context.Context, site string, d 
 		Data []SettingAutoSpeedtest `json:"data"`
 	}
 
+	d.Key = "auto_speedtest"
 	err := c.do(ctx, "PUT", fmt.Sprintf("s/%s/set/setting/auto_speedtest", site), d, &respBody)
 	if err != nil {
 		return nil, err

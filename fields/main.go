@@ -2,11 +2,14 @@ package main
 
 import (
 	"bytes"
+	_ "embed"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"go/format"
 	"io"
-	"io/ioutil"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -15,6 +18,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/hashicorp/go-version"
 	"github.com/iancoleman/strcase"
 )
 
@@ -55,6 +59,7 @@ var fieldReps = []replacement{
 	{"Networkgroup", "NetworkGroup"},
 	{"Pd", "PD"},
 	{"Pmf", "PMF"},
+	{"Portconf", "PortProfile"},
 	{"Qos", "QOS"},
 	{"Radiusprofile", "RADIUSProfile"},
 	{"Radius", "RADIUS"},
@@ -80,10 +85,10 @@ var fileReps = []replacement{
 	{"Dhcp", "DHCP"},
 	{"Wlan", "WLAN"},
 	{"NetworkConf", "Network"},
+	{"PortConf", "PortProfile"},
 	{"RadiusProfile", "RADIUSProfile"},
+	{"ApGroups", "APGroup"},
 }
-
-var embedTypes bool
 
 type Resource struct {
 	StructName     string
@@ -93,17 +98,19 @@ type Resource struct {
 }
 
 type FieldInfo struct {
-	FieldName       string
-	JSONName        string
-	FieldType       string
-	FieldValidation string
-	OmitEmpty       bool
-	IsArray         bool
-	Fields          map[string]*FieldInfo
+	FieldName           string
+	JSONName            string
+	FieldType           string
+	FieldValidation     string
+	OmitEmpty           bool
+	IsArray             bool
+	Fields              map[string]*FieldInfo
+	CustomUnmarshalType string
+	CustomUnmarshalFunc string
 }
 
 func NewResource(structName string, resourcePath string) *Resource {
-	baseType := NewFieldInfo(structName, resourcePath, "struct", "", false, false)
+	baseType := NewFieldInfo(structName, resourcePath, "struct", "", false, false, "")
 	resource := &Resource{
 		StructName:   structName,
 		ResourcePath: resourcePath,
@@ -119,43 +126,54 @@ func NewResource(structName string, resourcePath string) *Resource {
 	//
 	// This hack is here for stability of the generatd code, but can be removed if desired.
 	baseType.Fields = map[string]*FieldInfo{
-		"   ID":      NewFieldInfo("ID", "_id", "string", "", true, false),
-		"   SiteID":  NewFieldInfo("SiteID", "site_id", "string", "", true, false),
+		"   ID":      NewFieldInfo("ID", "_id", "string", "", true, false, ""),
+		"   SiteID":  NewFieldInfo("SiteID", "site_id", "string", "", true, false, ""),
 		"   _Spacer": nil,
 
-		"  Hidden":   NewFieldInfo("Hidden", "attr_hidden", "bool", "", true, false),
-		"  HiddenID": NewFieldInfo("HiddenID", "attr_hidden_id", "string", "", true, false),
-		"  NoDelete": NewFieldInfo("NoDelete", "attr_no_delete", "bool", "", true, false),
-		"  NoEdit":   NewFieldInfo("NoEdit", "attr_no_edit", "bool", "", true, false),
+		"  Hidden":   NewFieldInfo("Hidden", "attr_hidden", "bool", "", true, false, ""),
+		"  HiddenID": NewFieldInfo("HiddenID", "attr_hidden_id", "string", "", true, false, ""),
+		"  NoDelete": NewFieldInfo("NoDelete", "attr_no_delete", "bool", "", true, false, ""),
+		"  NoEdit":   NewFieldInfo("NoEdit", "attr_no_edit", "bool", "", true, false, ""),
 		"  _Spacer":  nil,
 
 		" _Spacer": nil,
 	}
 
-	if resource.IsSetting() {
+	switch {
+	case resource.IsSetting():
 		resource.ResourcePath = strcase.ToSnake(strings.TrimPrefix(structName, "Setting"))
-		baseType.Fields[" Key"] = NewFieldInfo("Key", "key", "string", "", false, false)
-	}
+		baseType.Fields[" Key"] = NewFieldInfo("Key", "key", "string", "", false, false, "")
 
-	if resource.StructName == "Device" {
-		baseType.Fields[" MAC"] = NewFieldInfo("MAC", "mac", "string", "", false, false)
-	}
-
-	if resource.StructName == "User" {
-		baseType.Fields[" IP"] = NewFieldInfo("IP", "ip", "string", "non-generated field", true, false)
+		if resource.StructName == "SettingUsg" {
+			// Removed in v7, retaining for backwards compatibility
+			baseType.Fields["MdnsEnabled"] = NewFieldInfo("MdnsEnabled", "mdns_enabled", "bool", "", false, false, "")
+		}
+	case resource.StructName == "Device":
+		baseType.Fields[" MAC"] = NewFieldInfo("MAC", "mac", "string", "", true, false, "")
+		baseType.Fields["Adopted"] = NewFieldInfo("Adopted", "adopted", "bool", "", false, false, "")
+		baseType.Fields["Model"] = NewFieldInfo("Model", "model", "string", "", true, false, "")
+		baseType.Fields["State"] = NewFieldInfo("State", "state", "DeviceState", "", false, false, "")
+		baseType.Fields["Type"] = NewFieldInfo("Type", "type", "string", "", true, false, "")
+	case resource.StructName == "User":
+		baseType.Fields[" IP"] = NewFieldInfo("IP", "ip", "string", "non-generated field", true, false, "")
+		baseType.Fields[" DevIdOverride"] = NewFieldInfo("DevIdOverride", "dev_id_override", "int", "non-generated field", true, false, "")
+	case resource.StructName == "WLAN":
+		// this field removed in v6, retaining for backwards compatibility
+		baseType.Fields["WLANGroupID"] = NewFieldInfo("WLANGroupID", "wlangroup_id", "string", "", false, false, "")
 	}
 
 	return resource
 }
 
-func NewFieldInfo(fieldName string, jsonName string, fieldType string, fieldValidation string, omitempty bool, isArray bool) *FieldInfo {
+func NewFieldInfo(fieldName string, jsonName string, fieldType string, fieldValidation string, omitempty bool, isArray bool, customUnmarshalType string) *FieldInfo {
 	return &FieldInfo{
-		FieldName:       fieldName,
-		JSONName:        jsonName,
-		FieldType:       fieldType,
-		FieldValidation: fieldValidation,
-		OmitEmpty:       omitempty,
-		IsArray:         isArray,
+		FieldName:           fieldName,
+		JSONName:            jsonName,
+		FieldType:           fieldType,
+		FieldValidation:     fieldValidation,
+		OmitEmpty:           omitempty,
+		IsArray:             isArray,
+		CustomUnmarshalType: customUnmarshalType,
 	}
 }
 
@@ -168,31 +186,51 @@ func cleanName(name string, reps []replacement) string {
 }
 
 func usage() {
-	fmt.Printf("Usage: %s [OPTIONS] versionDir outputDir\n", path.Base(os.Args[0]))
+	fmt.Printf("Usage: %s [OPTIONS] version\n", path.Base(os.Args[0]))
 	flag.PrintDefaults()
 }
 
 func main() {
-
 	flag.Usage = usage
 
-	noEmbeddedTypes := flag.Bool("no-embedded-types", false, "Whether to generate top-level type definitions for embedded type definitions")
+	versionBaseDirFlag := flag.String("version-base-dir", ".", "The base directory for version JSON files")
+	outputDirFlag := flag.String("output-dir", ".", "The output directory of the generated Go code")
+	downloadOnly := flag.Bool("download-only", false, "Only download and build the fields JSON directory, do not generate")
+	useLatestVersion := flag.Bool("latest", false, "Use the latest available version")
+
 	flag.Parse()
 
-	versionDir := flag.Arg(0)
-	outputDir := flag.Arg(1)
-	embedTypes = !*noEmbeddedTypes
-
-	if versionDir == "" {
-		fmt.Print("error: no version directory specified\n\n")
+	specifiedVersion := flag.Arg(0)
+	if specifiedVersion != "" && *useLatestVersion {
+		fmt.Print("error: cannot specify version with latest\n\n")
+		usage()
+		os.Exit(1)
+	} else if specifiedVersion == "" && !*useLatestVersion {
+		fmt.Print("error: must specify version or latest\n\n")
 		usage()
 		os.Exit(1)
 	}
 
-	if outputDir == "" {
-		fmt.Print("error: no output directory specified\n\n")
-		usage()
-		os.Exit(1)
+	var unifiVersion *version.Version
+	var unifiDownloadUrl *url.URL
+	var err error
+
+	if *useLatestVersion {
+		unifiVersion, unifiDownloadUrl, err = latestUnifiVersion()
+		if err != nil {
+			panic(err)
+		}
+	} else {
+		unifiVersion, err = version.NewVersion(specifiedVersion)
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+
+		unifiDownloadUrl, err = url.Parse(fmt.Sprintf("https://dl.ui.com/unifi/%s/unifi_sysvinit_all.deb", unifiVersion))
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	wd, err := os.Getwd()
@@ -200,10 +238,46 @@ func main() {
 		panic(err)
 	}
 
-	fieldsDir := filepath.Join(wd, versionDir)
-	outDir := filepath.Join(wd, outputDir)
+	fieldsDir := filepath.Join(wd, *versionBaseDirFlag, fmt.Sprintf("v%s", unifiVersion))
+	outDir := filepath.Join(wd, *outputDirFlag)
 
-	fieldsFiles, err := ioutil.ReadDir(fieldsDir)
+	fieldsInfo, err := os.Stat(fieldsDir)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			panic(err)
+		}
+
+		err = os.MkdirAll(fieldsDir, 0o755)
+		if err != nil {
+			panic(err)
+		}
+
+		// download fields, create
+		jarFile, err := downloadJar(unifiDownloadUrl, fieldsDir)
+		if err != nil {
+			panic(err)
+		}
+
+		err = extractJSON(jarFile, fieldsDir)
+		if err != nil {
+			panic(err)
+		}
+
+		fieldsInfo, err = os.Stat(fieldsDir)
+		if err != nil {
+			panic(err)
+		}
+	}
+	if !fieldsInfo.IsDir() {
+		panic("version info isn't a directory")
+	}
+
+	if *downloadOnly {
+		fmt.Println("Fields JSON ready!")
+		os.Exit(0)
+	}
+
+	fieldsFiles, err := os.ReadDir(fieldsDir)
 	if err != nil {
 		panic(err)
 	}
@@ -228,7 +302,7 @@ func main() {
 
 		goFile := strcase.ToSnake(structName) + ".generated.go"
 		fieldsFilePath := filepath.Join(fieldsDir, fieldsFile.Name())
-		b, err := ioutil.ReadFile(fieldsFilePath)
+		b, err := os.ReadFile(fieldsFilePath)
 		if err != nil {
 			fmt.Printf("skipping file %s: %s", fieldsFile.Name(), err)
 			continue
@@ -239,8 +313,19 @@ func main() {
 		switch resource.StructName {
 		case "Account":
 			resource.FieldProcessor = func(name string, f *FieldInfo) error {
-				if name == "IP" {
+				switch name {
+				case "IP", "NetworkID":
 					f.OmitEmpty = true
+				}
+				return nil
+			}
+		case "ChannelPlan":
+			resource.FieldProcessor = func(name string, f *FieldInfo) error {
+				switch name {
+				case "Channel", "BackupChannel", "TxPower":
+					if f.FieldType == "string" {
+						f.CustomUnmarshalType = "numberOrString"
+					}
 				}
 				return nil
 			}
@@ -249,19 +334,69 @@ func main() {
 				switch name {
 				case "X", "Y":
 					f.FieldType = "float64"
-				case "Channel", "BackupChannel", "TxPower":
-					f.FieldType = "int"
-				case "StpPriority", "Ht":
+				case "StpPriority":
 					f.FieldType = "string"
+					f.CustomUnmarshalType = "numberOrString"
+				case "Ht":
+					f.FieldType = "int"
+				case "Channel", "BackupChannel", "TxPower":
+					if f.FieldType == "string" {
+						f.CustomUnmarshalType = "numberOrString"
+					}
+				case "LteExtAnt", "LtePoe":
+					f.CustomUnmarshalType = "booleanishString"
 				}
 
 				f.OmitEmpty = true
+				switch name {
+				case "PortOverrides":
+					f.OmitEmpty = false
+				}
+
+				return nil
+			}
+		case "Network":
+			resource.FieldProcessor = func(name string, f *FieldInfo) error {
+				switch name {
+				case "InternetAccessEnabled", "IntraNetworkAccessEnabled":
+					if f.FieldType == "bool" {
+						f.CustomUnmarshalType = "*bool"
+						f.CustomUnmarshalFunc = "emptyBoolToTrue"
+					}
+				}
+				return nil
+			}
+		case "SettingGlobalAp":
+			resource.FieldProcessor = func(name string, f *FieldInfo) error {
+				if strings.HasPrefix(name, "6E") {
+					f.FieldName = strings.Replace(f.FieldName, "6E", "SixE", 1)
+				}
+
+				return nil
+			}
+		case "SettingMgmt":
+			sshKeyField := NewFieldInfo(resource.StructName+"XSshKeys", "x_ssh_keys", "struct", "", false, false, "")
+			sshKeyField.Fields = map[string]*FieldInfo{
+				"name":        NewFieldInfo("Name", "name", "string", "", false, false, ""),
+				"keyType":     NewFieldInfo("KeyType", "type", "string", "", false, false, ""),
+				"key":         NewFieldInfo("Key", "key", "string", "", false, false, ""),
+				"comment":     NewFieldInfo("Comment", "comment", "string", "", false, false, ""),
+				"date":        NewFieldInfo("Date", "date", "string", "", false, false, ""),
+				"fingerprint": NewFieldInfo("Fingerprint", "fingerprint", "string", "", false, false, ""),
+			}
+			resource.Types[sshKeyField.FieldName] = sshKeyField
+
+			resource.FieldProcessor = func(name string, f *FieldInfo) error {
+				if name == "XSshKeys" {
+					f.FieldType = sshKeyField.FieldName
+				}
 				return nil
 			}
 		case "SettingUsg":
 			resource.FieldProcessor = func(name string, f *FieldInfo) error {
 				if strings.HasSuffix(name, "Timeout") && name != "ArpCacheTimeout" {
 					f.FieldType = "int"
+					f.CustomUnmarshalType = "emptyStringInt"
 				}
 				return nil
 			}
@@ -272,6 +407,16 @@ func main() {
 					f.FieldType = "bool"
 				case "LastSeen":
 					f.FieldType = "int"
+					f.CustomUnmarshalType = "emptyStringInt"
+				}
+				return nil
+			}
+		case "WLAN":
+			resource.FieldProcessor = func(name string, f *FieldInfo) error {
+				switch name {
+				case "ScheduleWithDuration":
+					// always send schedule, so we can empty it if we want to
+					f.OmitEmpty = false
 				}
 				return nil
 			}
@@ -283,10 +428,33 @@ func main() {
 			continue
 		}
 
-		code, _ := resource.generateCode()
+		var code string
+		if code, err = resource.generateCode(); err != nil {
+			panic(err)
+		}
 
 		_ = os.Remove(filepath.Join(outDir, goFile))
-		ioutil.WriteFile(filepath.Join(outDir, goFile), ([]byte)(code), 0644)
+		if err := os.WriteFile(filepath.Join(outDir, goFile), ([]byte)(code), 0o644); err != nil {
+			panic(err)
+		}
+	}
+
+	// Write version file.
+	versionGo := []byte(fmt.Sprintf(`
+// Generated code. DO NOT EDIT.
+
+package unifi
+
+const UnifiVersion = %q
+`, unifiVersion))
+
+	versionGo, err = format.Source(versionGo)
+	if err != nil {
+		panic(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(outDir, "version.generated.go"), versionGo, 0o644); err != nil {
+		panic(err)
 	}
 
 	fmt.Printf("%s\n", outDir)
@@ -308,17 +476,18 @@ func (r *Resource) processFields(fields map[string]interface{}) {
 	}
 }
 
-func (r *Resource) fieldInfoFromValidation(name string, validation interface{}) (fieldInfo *FieldInfo, err error) {
+func (r *Resource) fieldInfoFromValidation(name string, validation interface{}) (*FieldInfo, error) {
 	fieldName := strcase.ToCamel(name)
 	fieldName = cleanName(fieldName, fieldReps)
 
 	empty := &FieldInfo{}
+	var fieldInfo *FieldInfo
 
 	switch validation := validation.(type) {
 	case []interface{}:
 		if len(validation) == 0 {
-			fieldInfo, err = NewFieldInfo(fieldName, name, "string", "", false, true), nil
-			err = r.FieldProcessor(fieldName, fieldInfo)
+			fieldInfo = NewFieldInfo(fieldName, name, "string", "", false, true, "")
+			err := r.FieldProcessor(fieldName, fieldInfo)
 			return fieldInfo, err
 		}
 		if len(validation) > 1 {
@@ -339,7 +508,7 @@ func (r *Resource) fieldInfoFromValidation(name string, validation interface{}) 
 	case map[string]interface{}:
 		typeName := r.StructName + fieldName
 
-		result := NewFieldInfo(fieldName, name, typeName, "", true, false)
+		result := NewFieldInfo(fieldName, name, typeName, "", true, false, "")
 		result.Fields = make(map[string]*FieldInfo)
 
 		for name, fv := range validation {
@@ -351,7 +520,7 @@ func (r *Resource) fieldInfoFromValidation(name string, validation interface{}) 
 			result.Fields[child.FieldName] = child
 		}
 
-		err = r.FieldProcessor(fieldName, result)
+		err := r.FieldProcessor(fieldName, result)
 		r.Types[typeName] = result
 		return result, err
 
@@ -363,11 +532,10 @@ func (r *Resource) fieldInfoFromValidation(name string, validation interface{}) 
 
 		switch {
 		case normalized == "falsetrue" || normalized == "truefalse":
-			fieldInfo, err = NewFieldInfo(fieldName, name, "bool", "", omitEmpty, false), nil
+			fieldInfo = NewFieldInfo(fieldName, name, "bool", "", omitEmpty, false, "")
 			return fieldInfo, r.FieldProcessor(fieldName, fieldInfo)
 		default:
 			if _, err := strconv.ParseFloat(normalized, 64); err == nil {
-
 				if normalized == "09" || normalized == "09.09" {
 					fieldValidation = ""
 				}
@@ -378,12 +546,13 @@ func (r *Resource) fieldInfoFromValidation(name string, validation interface{}) 
 					}
 
 					omitEmpty = true
-					fieldInfo, err = NewFieldInfo(fieldName, name, "float64", fieldValidation, omitEmpty, false), nil
+					fieldInfo = NewFieldInfo(fieldName, name, "float64", fieldValidation, omitEmpty, false, "")
 					return fieldInfo, r.FieldProcessor(fieldName, fieldInfo)
 				}
 
 				omitEmpty = true
-				fieldInfo, err = NewFieldInfo(fieldName, name, "int", fieldValidation, omitEmpty, false), nil
+				fieldInfo = NewFieldInfo(fieldName, name, "int", fieldValidation, omitEmpty, false, "")
+				fieldInfo.CustomUnmarshalType = "emptyStringInt"
 				return fieldInfo, r.FieldProcessor(fieldName, fieldInfo)
 			}
 		}
@@ -392,7 +561,7 @@ func (r *Resource) fieldInfoFromValidation(name string, validation interface{}) 
 		}
 
 		omitEmpty = omitEmpty || (!strings.Contains(validation, "^$") && !strings.HasSuffix(fieldName, "ID"))
-		fieldInfo, err = NewFieldInfo(fieldName, name, "string", fieldValidation, omitEmpty, false), nil
+		fieldInfo = NewFieldInfo(fieldName, name, "string", fieldValidation, omitEmpty, false, "")
 		return fieldInfo, r.FieldProcessor(fieldName, fieldInfo)
 	}
 
@@ -411,18 +580,27 @@ func (r *Resource) processJSON(b []byte) error {
 	return nil
 }
 
+//go:embed api.go.tmpl
+var apiGoTemplate string
+
 func (r *Resource) generateCode() (string, error) {
 	var err error
 	var buf bytes.Buffer
 	writer := io.Writer(&buf)
 
-	tpl := template.Must(template.New("api.go.tmpl").Funcs(template.FuncMap{
-		"embedTypes": func() bool { return embedTypes },
-	}).ParseFiles("api.go.tmpl"))
+	tpl := template.Must(template.New("api.go.tmpl").Parse(apiGoTemplate))
 
-	tpl.Execute(writer, r)
+	err = tpl.Execute(writer, r)
+	if err != nil {
+		return "", fmt.Errorf("failed to render template: %w", err)
+	}
 
-	return buf.String(), err
+	src, err := format.Source(buf.Bytes())
+	if err != nil {
+		return "", fmt.Errorf("failed to format source: %w", err)
+	}
+
+	return string(src), err
 }
 
 func normalizeValidation(re string) string {

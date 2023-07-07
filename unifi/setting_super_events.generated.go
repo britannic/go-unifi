@@ -5,13 +5,15 @@ package unifi
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 )
 
 // just to fix compile issues with the import
 var (
-	_ fmt.Formatter
 	_ context.Context
+	_ fmt.Formatter
+	_ json.Marshaler
 )
 
 type SettingSuperEvents struct {
@@ -26,6 +28,22 @@ type SettingSuperEvents struct {
 	Key string `json:"key"`
 
 	Ignored string `json:"_ignored,omitempty"`
+}
+
+func (dst *SettingSuperEvents) UnmarshalJSON(b []byte) error {
+	type Alias SettingSuperEvents
+	aux := &struct {
+		*Alias
+	}{
+		Alias: (*Alias)(dst),
+	}
+
+	err := json.Unmarshal(b, &aux)
+	if err != nil {
+		return fmt.Errorf("unable to unmarshal alias: %w", err)
+	}
+
+	return nil
 }
 
 func (c *Client) getSettingSuperEvents(ctx context.Context, site string) (*SettingSuperEvents, error) {
@@ -53,6 +71,7 @@ func (c *Client) updateSettingSuperEvents(ctx context.Context, site string, d *S
 		Data []SettingSuperEvents `json:"data"`
 	}
 
+	d.Key = "super_events"
 	err := c.do(ctx, "PUT", fmt.Sprintf("s/%s/set/setting/super_events", site), d, &respBody)
 	if err != nil {
 		return nil, err

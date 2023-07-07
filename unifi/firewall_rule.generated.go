@@ -5,13 +5,15 @@ package unifi
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 )
 
 // just to fix compile issues with the import
 var (
-	_ fmt.Formatter
 	_ context.Context
+	_ fmt.Formatter
+	_ json.Marshaler
 )
 
 type FirewallRule struct {
@@ -41,9 +43,10 @@ type FirewallRule struct {
 	Name                  string   `json:"name,omitempty"` // .{1,128}
 	Protocol              string   `json:"protocol"`       // ^$|all|([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])|tcp_udp|ah|ax.25|dccp|ddp|egp|eigrp|encap|esp|etherip|fc|ggp|gre|hip|hmp|icmp|idpr-cmtp|idrp|igmp|igp|ip|ipcomp|ipencap|ipip|ipv6|ipv6-frag|ipv6-icmp|ipv6-nonxt|ipv6-opts|ipv6-route|isis|iso-tp4|l2tp|manet|mobility-header|mpls-in-ip|ospf|pim|pup|rdp|rohc|rspf|rsvp|sctp|shim6|skip|st|tcp|udp|udplite|vmtp|vrrp|wesp|xns-idp|xtp
 	ProtocolMatchExcepted bool     `json:"protocol_match_excepted"`
-	ProtocolV6            string   `json:"protocol_v6"`          // ^$|([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])|ah|all|dccp|eigrp|esp|gre|icmpv6|ipcomp|ipv6|ipv6-frag|ipv6-icmp|ipv6-nonxt|ipv6-opts|ipv6-route|isis|l2tp|manet|mobility-header|mpls-in-ip|ospf|pim|rsvp|sctp|shim6|tcp|tcp_udp|udp|vrrp
-	RuleIndex             int      `json:"rule_index,omitempty"` // 2[0-9]{3}|4[0-9]{3}
-	Ruleset               string   `json:"ruleset,omitempty"`    // WAN_IN|WAN_OUT|WAN_LOCAL|LAN_IN|LAN_OUT|LAN_LOCAL|GUEST_IN|GUEST_OUT|GUEST_LOCAL|WANv6_IN|WANv6_OUT|WANv6_LOCAL|LANv6_IN|LANv6_OUT|LANv6_LOCAL|GUESTv6_IN|GUESTv6_OUT|GUESTv6_LOCAL
+	ProtocolV6            string   `json:"protocol_v6"`                  // ^$|([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])|ah|all|dccp|eigrp|esp|gre|icmpv6|ipcomp|ipv6|ipv6-frag|ipv6-icmp|ipv6-nonxt|ipv6-opts|ipv6-route|isis|l2tp|manet|mobility-header|mpls-in-ip|ospf|pim|rsvp|sctp|shim6|tcp|tcp_udp|udp|vrrp
+	RuleIndex             int      `json:"rule_index,omitempty"`         // 2[0-9]{3}|4[0-9]{3}
+	Ruleset               string   `json:"ruleset,omitempty"`            // WAN_IN|WAN_OUT|WAN_LOCAL|LAN_IN|LAN_OUT|LAN_LOCAL|GUEST_IN|GUEST_OUT|GUEST_LOCAL|WANv6_IN|WANv6_OUT|WANv6_LOCAL|LANv6_IN|LANv6_OUT|LANv6_LOCAL|GUESTv6_IN|GUESTv6_OUT|GUESTv6_LOCAL
+	SettingPreference     string   `json:"setting_preference,omitempty"` // auto|manual
 	SrcAddress            string   `json:"src_address,omitempty"`
 	SrcAddressIPV6        string   `json:"src_address_ipv6,omitempty"`
 	SrcFirewallGroupIDs   []string `json:"src_firewallgroup_ids,omitempty"` // [\d\w]+
@@ -62,6 +65,25 @@ type FirewallRule struct {
 	UTC                   bool     `json:"utc"`
 	Weekdays              string   `json:"weekdays"` // ^$|^((Mon|Tue|Wed|Thu|Fri|Sat|Sun)(,(Mon|Tue|Wed|Thu|Fri|Sat|Sun)){0,6})$
 	WeekdaysNegate        bool     `json:"weekdays_negate"`
+}
+
+func (dst *FirewallRule) UnmarshalJSON(b []byte) error {
+	type Alias FirewallRule
+	aux := &struct {
+		RuleIndex emptyStringInt `json:"rule_index"`
+
+		*Alias
+	}{
+		Alias: (*Alias)(dst),
+	}
+
+	err := json.Unmarshal(b, &aux)
+	if err != nil {
+		return fmt.Errorf("unable to unmarshal alias: %w", err)
+	}
+	dst.RuleIndex = int(aux.RuleIndex)
+
+	return nil
 }
 
 func (c *Client) listFirewallRule(ctx context.Context, site string) ([]FirewallRule, error) {

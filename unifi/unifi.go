@@ -12,14 +12,21 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"sync"
 )
 
 const (
-	apiPath    = "/api"
-	apiPathNew = "/proxy/network/api"
+	apiPath   = "/api"
+	apiV2Path = "/v2/api"
+
+	apiPathNew   = "/proxy/network/api"
+	apiV2PathNew = "/proxy/network/v2/api"
 
 	loginPath    = "/api/login"
 	loginPathNew = "/api/auth/login"
+
+	statusPath    = "/status"
+	statusPathNew = "/proxy/network/status"
 )
 
 // NotFoundError for API method not found
@@ -41,11 +48,28 @@ func (err *APIError) Error() string {
 
 // Client struct for configuring client API requests
 type Client struct {
+	// single thread client calls for CSRF, etc.
+	sync.Mutex
+
 	c       *http.Client
 	baseURL *url.URL
 
-	apiPath   string
-	loginPath string
+	apiPath    string
+	apiV2Path  string
+	loginPath  string
+	statusPath string
+
+	csrf string
+
+	version string
+}
+
+func (c *Client) CSRFToken() string {
+	return c.csrf
+}
+
+func (c *Client) Version() string {
+	return c.version
 }
 
 // SetBaseURL sets the UniFi controller's hostname/IP address
@@ -76,7 +100,7 @@ func (c *Client) setAPIUrlStyle(ctx context.Context) error {
 	// see https://github.com/unifi-poller/unifi/blob/4dc44f11f61a2e08bf7ec5b20c71d5bced837b5d/unifi.go#L101-L104
 	// and https://github.com/unifi-poller/unifi/commit/43a6b225031a28f2b358f52d03a7217c7b524143
 
-	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL.String(), nil)
 	if err != nil {
 		return err
 	}
@@ -100,17 +124,20 @@ func (c *Client) setAPIUrlStyle(ctx context.Context) error {
 	if resp.StatusCode == http.StatusOK {
 		// the new API returns a 200 for a / request
 		c.apiPath = apiPathNew
+		c.apiV2Path = apiV2PathNew
 		c.loginPath = loginPathNew
+		c.statusPath = statusPathNew
 		return nil
 	}
 
 	// The old version returns a "302" (to /manage) for a / request
 	c.apiPath = apiPath
+	c.apiV2Path = apiV2Path
 	c.loginPath = loginPath
+	c.statusPath = statusPath
 	return nil
 }
 
-// Login to the UniFi controller API and grab a session cookie
 func (c *Client) Login(ctx context.Context, user, pass string) error {
 	if c.c == nil {
 		c.c = &http.Client{}
@@ -124,13 +151,48 @@ func (c *Client) Login(ctx context.Context, user, pass string) error {
 		return fmt.Errorf("unable to determine API URL style: %w", err)
 	}
 
-	return c.do(ctx, "POST", c.loginPath, &struct {
+	var status struct {
+		Meta struct {
+			ServerVersion string `json:"server_version"`
+			UUID          string `json:"uuid"`
+		} `json:"meta"`
+	}
+
+	err = c.do(ctx, "POST", c.loginPath, &struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}{
 		Username: user,
 		Password: pass,
 	}, nil)
+	if err != nil {
+		return err
+	}
+
+	err = c.do(ctx, "GET", c.statusPath, nil, &status)
+	if err != nil {
+		return err
+	}
+
+	if version := status.Meta.ServerVersion; version != "" {
+		c.version = status.Meta.ServerVersion
+		return nil
+	}
+
+	// newer version of 6.0 controller, use sysinfo to determine version
+	// using default site since it must exist
+	si, err := c.sysinfo(ctx, "default")
+	if err != nil {
+		return err
+	}
+
+	c.version = si.Version
+
+	if c.version == "" {
+		return fmt.Errorf("unable to determine controller version")
+	}
+
+	return nil
 }
 
 // Logout of the UniFi controller API
@@ -142,9 +204,11 @@ func (c *Client) Logout(ctx context.Context) error {
 	return c.do(ctx, "GET", "logout", nil, nil)
 }
 
-
-
 func (c *Client) do(ctx context.Context, method, relativeURL string, reqBody interface{}, respBody interface{}) error {
+	// single threading requests, this is mostly to assist in CSRF token propagation
+	c.Lock()
+	defer c.Unlock()
+
 	var (
 		reqReader io.Reader
 		err       error
@@ -173,6 +237,11 @@ func (c *Client) do(ctx context.Context, method, relativeURL string, reqBody int
 	}
 
 	req.Header.Set("User-Agent", "terraform-provider-unifi/0.1")
+	req.Header.Add("Content-Type", "application/json; charset=utf-8")
+
+	if c.csrf != "" {
+		req.Header.Set("X-CSRF-Token", c.csrf)
+	}
 
 	resp, err := c.c.Do(req)
 	if err != nil {
@@ -184,13 +253,29 @@ func (c *Client) do(ctx context.Context, method, relativeURL string, reqBody int
 		return &NotFoundError{}
 	}
 
-	if resp.StatusCode != 200 {
-		fmt.Printf("Request Body:\n%s\n", string(reqBytes))
+	if csrf := resp.Header.Get("x-csrf-token"); csrf != "" {
+		c.csrf = resp.Header.Get("x-csrf-token")
+	}
+
+	if resp.StatusCode != http.StatusOK {
 		errBody := struct {
 			Meta meta `json:"meta"`
+			Data []struct {
+				Meta meta `json:"meta"`
+			} `json:"data"`
 		}{}
-		err = json.NewDecoder(resp.Body).Decode(&errBody)
-		return fmt.Errorf("%s %s (%s) for %s %s", errBody.Meta.RC, errBody.Meta.Message, resp.Status, method, url.String())
+		if err = json.NewDecoder(resp.Body).Decode(&errBody); err != nil {
+			return err
+		}
+		var apiErr error
+		if len(errBody.Data) > 0 && errBody.Data[0].Meta.RC == "error" {
+			// check first error in data, should we look for more than one?
+			apiErr = errBody.Data[0].Meta.error()
+		}
+		if apiErr == nil {
+			apiErr = errBody.Meta.error()
+		}
+		return fmt.Errorf("%w (%s) for %s %s", apiErr, resp.Status, method, url.String())
 	}
 
 	if respBody == nil || resp.ContentLength == 0 {

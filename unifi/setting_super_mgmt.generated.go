@@ -5,13 +5,15 @@ package unifi
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 )
 
 // just to fix compile issues with the import
 var (
-	_ fmt.Formatter
 	_ context.Context
+	_ fmt.Formatter
+	_ json.Marshaler
 )
 
 type SettingSuperMgmt struct {
@@ -49,8 +51,9 @@ type SettingSuperMgmt struct {
 	ContactInfoShippingAddress2              string   `json:"contact_info_shipping_address_2,omitempty"`
 	ContactInfoState                         string   `json:"contact_info_state,omitempty"`
 	ContactInfoZip                           string   `json:"contact_info_zip,omitempty"`
+	DataRetentionSettingPreference           string   `json:"data_retention_setting_preference,omitempty"` // auto|manual
 	DataRetentionTimeEnabled                 bool     `json:"data_retention_time_enabled"`
-	DataRetentionTimeInHoursFor5minutesScale int      `json:"data_retention_time_in_hours_for_5minutes_scale,omitempty"`
+	DataRetentionTimeInHoursFor5MinutesScale int      `json:"data_retention_time_in_hours_for_5minutes_scale,omitempty"`
 	DataRetentionTimeInHoursForDailyScale    int      `json:"data_retention_time_in_hours_for_daily_scale,omitempty"`
 	DataRetentionTimeInHoursForHourlyScale   int      `json:"data_retention_time_in_hours_for_hourly_scale,omitempty"`
 	DataRetentionTimeInHoursForMonthlyScale  int      `json:"data_retention_time_in_hours_for_monthly_scale,omitempty"`
@@ -65,11 +68,48 @@ type SettingSuperMgmt struct {
 	LiveUpdates                              string   `json:"live_updates,omitempty"` // disabled|live|auto
 	MinimumUsableHdSpace                     int      `json:"minimum_usable_hd_space,omitempty"`
 	MinimumUsableSdSpace                     int      `json:"minimum_usable_sd_space,omitempty"`
+	MultipleSitesEnabled                     bool     `json:"multiple_sites_enabled"`
 	OverrideInformHost                       bool     `json:"override_inform_host"`
+	OverrideInformHostLocation               string   `json:"override_inform_host_location,omitempty"`
 	StoreEnabled                             string   `json:"store_enabled,omitempty"` // disabled|super-only|everyone
 	TimeSeriesPerClientStatsEnabled          bool     `json:"time_series_per_client_stats_enabled"`
 	XSshPassword                             string   `json:"x_ssh_password,omitempty"`
 	XSshUsername                             string   `json:"x_ssh_username,omitempty"`
+}
+
+func (dst *SettingSuperMgmt) UnmarshalJSON(b []byte) error {
+	type Alias SettingSuperMgmt
+	aux := &struct {
+		AutobackupDays                           emptyStringInt `json:"autobackup_days"`
+		AutobackupMaxFiles                       emptyStringInt `json:"autobackup_max_files"`
+		DataRetentionTimeInHoursFor5MinutesScale emptyStringInt `json:"data_retention_time_in_hours_for_5minutes_scale"`
+		DataRetentionTimeInHoursForDailyScale    emptyStringInt `json:"data_retention_time_in_hours_for_daily_scale"`
+		DataRetentionTimeInHoursForHourlyScale   emptyStringInt `json:"data_retention_time_in_hours_for_hourly_scale"`
+		DataRetentionTimeInHoursForMonthlyScale  emptyStringInt `json:"data_retention_time_in_hours_for_monthly_scale"`
+		DataRetentionTimeInHoursForOthers        emptyStringInt `json:"data_retention_time_in_hours_for_others"`
+		MinimumUsableHdSpace                     emptyStringInt `json:"minimum_usable_hd_space"`
+		MinimumUsableSdSpace                     emptyStringInt `json:"minimum_usable_sd_space"`
+
+		*Alias
+	}{
+		Alias: (*Alias)(dst),
+	}
+
+	err := json.Unmarshal(b, &aux)
+	if err != nil {
+		return fmt.Errorf("unable to unmarshal alias: %w", err)
+	}
+	dst.AutobackupDays = int(aux.AutobackupDays)
+	dst.AutobackupMaxFiles = int(aux.AutobackupMaxFiles)
+	dst.DataRetentionTimeInHoursFor5MinutesScale = int(aux.DataRetentionTimeInHoursFor5MinutesScale)
+	dst.DataRetentionTimeInHoursForDailyScale = int(aux.DataRetentionTimeInHoursForDailyScale)
+	dst.DataRetentionTimeInHoursForHourlyScale = int(aux.DataRetentionTimeInHoursForHourlyScale)
+	dst.DataRetentionTimeInHoursForMonthlyScale = int(aux.DataRetentionTimeInHoursForMonthlyScale)
+	dst.DataRetentionTimeInHoursForOthers = int(aux.DataRetentionTimeInHoursForOthers)
+	dst.MinimumUsableHdSpace = int(aux.MinimumUsableHdSpace)
+	dst.MinimumUsableSdSpace = int(aux.MinimumUsableSdSpace)
+
+	return nil
 }
 
 func (c *Client) getSettingSuperMgmt(ctx context.Context, site string) (*SettingSuperMgmt, error) {
@@ -97,6 +137,7 @@ func (c *Client) updateSettingSuperMgmt(ctx context.Context, site string, d *Set
 		Data []SettingSuperMgmt `json:"data"`
 	}
 
+	d.Key = "super_mgmt"
 	err := c.do(ctx, "PUT", fmt.Sprintf("s/%s/set/setting/super_mgmt", site), d, &respBody)
 	if err != nil {
 		return nil, err

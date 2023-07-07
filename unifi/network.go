@@ -6,26 +6,24 @@ import (
 	"fmt"
 )
 
-func (dst *Network) UnmarshalJSON(b []byte) error {
+func (dst *Network) MarshalJSON() ([]byte, error) {
 	type Alias Network
 	aux := &struct {
-		VLAN           emptyStringInt `json:"vlan"`
-		DHCPDLeaseTime emptyStringInt `json:"dhcpd_leasetime"`
-
 		*Alias
+
+		WANEgressQOS *emptyStringInt `json:"wan_egress_qos,omitempty"`
 	}{
 		Alias: (*Alias)(dst),
 	}
 
-	err := json.Unmarshal(b, &aux)
-	if err != nil {
-		return fmt.Errorf("unable to unmarshal alias: %w", err)
+	if dst.Purpose == "wan" {
+		// only send QOS when this is a WAN network
+		v := emptyStringInt(dst.WANEgressQOS)
+		aux.WANEgressQOS = &v
 	}
 
-	dst.VLAN = int(aux.VLAN)
-	dst.DHCPDLeaseTime = int(aux.DHCPDLeaseTime)
-
-	return nil
+	b, err := json.Marshal(aux)
+	return b, err
 }
 
 func (c *Client) DeleteNetwork(ctx context.Context, site, id, name string) error {

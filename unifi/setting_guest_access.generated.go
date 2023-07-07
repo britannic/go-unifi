@@ -5,13 +5,15 @@ package unifi
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 )
 
 // just to fix compile issues with the import
 var (
-	_ fmt.Formatter
 	_ context.Context
+	_ fmt.Formatter
+	_ json.Marshaler
 )
 
 type SettingGuestAccess struct {
@@ -50,20 +52,27 @@ type SettingGuestAccess struct {
 	PaymentEnabled                         bool     `json:"payment_enabled"`
 	PaypalUseSandbox                       bool     `json:"paypal_use_sandbox"`
 	PortalCustomized                       bool     `json:"portal_customized"`
+	PortalCustomizedAuthenticationText     string   `json:"portal_customized_authentication_text,omitempty"`
 	PortalCustomizedBgColor                string   `json:"portal_customized_bg_color"` // ^#[a-zA-Z0-9]{6}$|^#[a-zA-Z0-9]{3}$|^$
 	PortalCustomizedBgImageEnabled         bool     `json:"portal_customized_bg_image_enabled"`
 	PortalCustomizedBgImageFilename        string   `json:"portal_customized_bg_image_filename,omitempty"`
 	PortalCustomizedBgImageTile            bool     `json:"portal_customized_bg_image_tile"`
+	PortalCustomizedBgType                 string   `json:"portal_customized_bg_type,omitempty"`     // color|image|gallery
 	PortalCustomizedBoxColor               string   `json:"portal_customized_box_color"`             // ^#[a-zA-Z0-9]{6}$|^#[a-zA-Z0-9]{3}$|^$
 	PortalCustomizedBoxLinkColor           string   `json:"portal_customized_box_link_color"`        // ^#[a-zA-Z0-9]{6}$|^#[a-zA-Z0-9]{3}$|^$
 	PortalCustomizedBoxOpacity             int      `json:"portal_customized_box_opacity,omitempty"` // ^[1-9][0-9]?$|^100$|^$
+	PortalCustomizedBoxRADIUS              int      `json:"portal_customized_box_radius,omitempty"`  // [0-9]|[1-4][0-9]|50
 	PortalCustomizedBoxTextColor           string   `json:"portal_customized_box_text_color"`        // ^#[a-zA-Z0-9]{6}$|^#[a-zA-Z0-9]{3}$|^$
 	PortalCustomizedButtonColor            string   `json:"portal_customized_button_color"`          // ^#[a-zA-Z0-9]{6}$|^#[a-zA-Z0-9]{3}$|^$
-	PortalCustomizedButtonTextColor        string   `json:"portal_customized_button_text_color"`     // ^#[a-zA-Z0-9]{6}$|^#[a-zA-Z0-9]{3}$|^$
-	PortalCustomizedLanguages              []string `json:"portal_customized_languages,omitempty"`   // ^[a-z]{2}(_[A-Z]{2})*$
-	PortalCustomizedLinkColor              string   `json:"portal_customized_link_color"`            // ^#[a-zA-Z0-9]{6}$|^#[a-zA-Z0-9]{3}$|^$
+	PortalCustomizedButtonText             string   `json:"portal_customized_button_text,omitempty"`
+	PortalCustomizedButtonTextColor        string   `json:"portal_customized_button_text_color"`   // ^#[a-zA-Z0-9]{6}$|^#[a-zA-Z0-9]{3}$|^$
+	PortalCustomizedLanguages              []string `json:"portal_customized_languages,omitempty"` // ^[a-z]{2}([_-][a-zA-Z]{2,4})*$
+	PortalCustomizedLinkColor              string   `json:"portal_customized_link_color"`          // ^#[a-zA-Z0-9]{6}$|^#[a-zA-Z0-9]{3}$|^$
 	PortalCustomizedLogoEnabled            bool     `json:"portal_customized_logo_enabled"`
 	PortalCustomizedLogoFilename           string   `json:"portal_customized_logo_filename,omitempty"`
+	PortalCustomizedLogoPosition           string   `json:"portal_customized_logo_position,omitempty"` // left|center|right
+	PortalCustomizedLogoSize               int      `json:"portal_customized_logo_size,omitempty"`     // 6[4-9]|[7-9][0-9]|1[0-8][0-9]|19[0-2]
+	PortalCustomizedSuccessText            string   `json:"portal_customized_success_text,omitempty"`
 	PortalCustomizedTextColor              string   `json:"portal_customized_text_color"` // ^#[a-zA-Z0-9]{6}$|^#[a-zA-Z0-9]{3}$|^$
 	PortalCustomizedTitle                  string   `json:"portal_customized_title,omitempty"`
 	PortalCustomizedTos                    string   `json:"portal_customized_tos,omitempty"`
@@ -116,6 +125,35 @@ type SettingGuestAccess struct {
 	XWechatSecretKey                       string   `json:"x_wechat_secret_key,omitempty"`
 }
 
+func (dst *SettingGuestAccess) UnmarshalJSON(b []byte) error {
+	type Alias SettingGuestAccess
+	aux := &struct {
+		ExpireNumber               emptyStringInt `json:"expire_number"`
+		ExpireUnit                 emptyStringInt `json:"expire_unit"`
+		PortalCustomizedBoxOpacity emptyStringInt `json:"portal_customized_box_opacity"`
+		PortalCustomizedBoxRADIUS  emptyStringInt `json:"portal_customized_box_radius"`
+		PortalCustomizedLogoSize   emptyStringInt `json:"portal_customized_logo_size"`
+		RADIUSDisconnectPort       emptyStringInt `json:"radius_disconnect_port"`
+
+		*Alias
+	}{
+		Alias: (*Alias)(dst),
+	}
+
+	err := json.Unmarshal(b, &aux)
+	if err != nil {
+		return fmt.Errorf("unable to unmarshal alias: %w", err)
+	}
+	dst.ExpireNumber = int(aux.ExpireNumber)
+	dst.ExpireUnit = int(aux.ExpireUnit)
+	dst.PortalCustomizedBoxOpacity = int(aux.PortalCustomizedBoxOpacity)
+	dst.PortalCustomizedBoxRADIUS = int(aux.PortalCustomizedBoxRADIUS)
+	dst.PortalCustomizedLogoSize = int(aux.PortalCustomizedLogoSize)
+	dst.RADIUSDisconnectPort = int(aux.RADIUSDisconnectPort)
+
+	return nil
+}
+
 func (c *Client) getSettingGuestAccess(ctx context.Context, site string) (*SettingGuestAccess, error) {
 	var respBody struct {
 		Meta meta                 `json:"meta"`
@@ -141,6 +179,7 @@ func (c *Client) updateSettingGuestAccess(ctx context.Context, site string, d *S
 		Data []SettingGuestAccess `json:"data"`
 	}
 
+	d.Key = "guest_access"
 	err := c.do(ctx, "PUT", fmt.Sprintf("s/%s/set/setting/guest_access", site), d, &respBody)
 	if err != nil {
 		return nil, err

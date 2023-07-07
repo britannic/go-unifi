@@ -65,9 +65,9 @@ func (c *Client) CreateUser(ctx context.Context, site string, d *User) (*User, e
 		return nil, &NotFoundError{}
 	}
 
-	new := respBody.Data[0].Data[0]
+	user := respBody.Data[0].Data[0]
 
-	return &new, nil
+	return &user, nil
 }
 
 func (c *Client) stamgr(ctx context.Context, site, cmd string, data map[string]interface{}) ([]User, error) {
@@ -146,6 +146,47 @@ func (c *Client) DeleteUserByMAC(ctx context.Context, site, mac string) error {
 	if len(users) != 1 {
 		return &NotFoundError{}
 	}
+	return nil
+}
+
+func (c *Client) KickUserByMAC(ctx context.Context, site, mac string) error {
+	users, err := c.stamgr(ctx, site, "kick-sta", map[string]interface{}{
+		"mac": mac,
+	})
+	if err != nil {
+		return err
+	}
+	if len(users) != 1 {
+		return &NotFoundError{}
+	}
+	return nil
+}
+
+func (c *Client) OverrideUserFingerprint(ctx context.Context, site, mac string, devIdOveride int) error {
+	reqBody := map[string]interface{}{
+		"mac":             mac,
+		"dev_id_override": devIdOveride,
+		"search_query":    "",
+	}
+
+	var reqMethod string
+	if devIdOveride == 0 {
+		reqMethod = "DELETE"
+	} else {
+		reqMethod = "PUT"
+	}
+
+	var respBody struct {
+		Mac           string `json:"mac"`
+		DevIdOverride int    `json:"dev_id_override"`
+		SearchQuery   string `json:"search_query"`
+	}
+
+	err := c.do(ctx, reqMethod, fmt.Sprintf("%s/site/%s/station/%s/fingerprint_override", c.apiV2Path, site, mac), reqBody, &respBody)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
