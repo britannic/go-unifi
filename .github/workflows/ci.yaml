@@ -11,16 +11,16 @@ jobs:
   build:
     runs-on: 'ubuntu-latest'
     steps:
-      - uses: 'actions/checkout@v3.3.0'
-      - uses: 'actions/setup-go@v4'
+      - uses: 'actions/checkout@v4'
+      - uses: 'actions/setup-go@v5'
       - run: 'go build ./...'
 
   generate:
     needs: 'build'
     runs-on: 'ubuntu-latest'
     steps:
-      - uses: 'actions/checkout@v3.3.0'
-      - uses: 'actions/setup-go@v4'
+      - uses: 'actions/checkout@v4'
+      - uses: 'actions/setup-go@v5'
 
       - run: 'go generate unifi/device.go'
       - run: 'git diff --compact-summary --exit-code'
@@ -28,8 +28,8 @@ jobs:
   lint:
     runs-on: 'ubuntu-latest'
     steps:
-      - uses: 'actions/checkout@v3.3.0'
-      - uses: 'actions/setup-go@v4'
+      - uses: 'actions/checkout@v4'
+      - uses: 'actions/setup-go@v5'
       - uses: 'golangci/golangci-lint-action@v3'
         with:
           skip-pkg-cache: true
@@ -38,12 +38,12 @@ jobs:
     needs: 'build'
     runs-on: 'ubuntu-latest'
     steps:
-      - uses: 'actions/checkout@v3.3.0'
-      - uses: 'actions/setup-go@v4'
+      - uses: 'actions/checkout@v4'
+      - uses: 'actions/setup-go@v5'
       - run: 'go test ./...'
 
   yamllint:
     runs-on: 'ubuntu-latest'
     steps:
-      - uses: 'actions/checkout@v3.3.0'
+      - uses: 'actions/checkout@v4'
       - uses: 'ibiqlik/action-yamllint@v3'
