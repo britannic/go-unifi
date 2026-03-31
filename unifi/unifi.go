@@ -56,16 +56,6 @@ func (err *APIError) Is(target error) bool {
 	return false
 }
 
-func (err *APIError) Is(target error) bool {
-	var apiError *APIError
-	if errors.As(target, &apiError) {
-		if err.RC == apiError.RC && err.Message == apiError.Message {
-			return true
-		}
-	}
-	return false
-}
-
 // Client struct for configuring client API requests
 type Client struct {
 	// single thread client calls for CSRF, etc.
