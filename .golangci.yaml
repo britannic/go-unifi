@@ -3,11 +3,14 @@ linters:
   enable-all: true
   disable:
     - 'depguard'
+    - 'mnd'
+    - 'nlreturn'
     - 'tagliatelle'
 
     # Temporary
     - 'cyclop'
     - 'dupl'
+    - 'err113'
     - 'exhaustruct'
     - 'forbidigo'
     - 'funlen'
@@ -17,14 +20,10 @@ linters:
     - 'gocritic'
     - 'gocyclo'
     - 'godox'
-    - 'goerr113'
-    - 'gomnd'
     - 'gosec'
     - 'lll'
     - 'maintidx'
     - 'nestif'
-    - 'nlreturn'
-    - 'paralleltest'
     - 'revive'
     - 'stylecheck'
     - 'varnamelen'
@@ -32,13 +31,4 @@ linters:
     - 'wsl'
 
     # Deprecated
-    - 'deadcode'
-    - 'exhaustivestruct'
-    - 'golint'
-    - 'ifshort'
-    - 'interfacer'
-    - 'maligned'
-    - 'nosnakecase'
-    - 'scopelint'
-    - 'structcheck'
-    - 'varcheck'
+    - 'exportloopref'
