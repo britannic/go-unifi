@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 )
 
 // GetUserByMAC returns slightly different information than GetUser, as they
@@ -119,15 +120,21 @@ func (c *Client) UnblockUserByMAC(ctx context.Context, site, mac string) error {
 	return nil
 }
 
-// AuthUserByMAC authenticates a guest WiFi session by MAC
+// AuthUserByMAC authenticates a guest WiFi session by MAC.
+// minutes must be a decimal integer string (e.g. "480"); it is sent to the
+// controller as a JSON number so that the session expiry is honoured. If
+// minutes is empty or cannot be parsed the field is omitted and the
+// controller applies its own default (typically unlimited).
 func (c *Client) AuthUserByMAC(ctx context.Context, site, minutes, ap, mac string) error {
-	users, err := c.stamgr(ctx, site, "authorize-guest", map[string]interface{}{
-		"ap_mac":  ap,
-		"cmd":     "authorize-guest",
-		"mac":     mac,
-		"minutes": minutes,
-	})
-
+	params := map[string]interface{}{
+		"ap_mac": ap,
+		"cmd":    "authorize-guest",
+		"mac":    mac,
+	}
+	if m, err := strconv.Atoi(minutes); err == nil && m > 0 {
+		params["minutes"] = m
+	}
+	users, err := c.stamgr(ctx, site, "authorize-guest", params)
 	if err != nil {
 		return err
 	}
